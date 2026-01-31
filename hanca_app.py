@@ -2,13 +2,45 @@ import streamlit as st
 import pandas as pd
 import random
 import io
+import time
 
 # ==========================================
-# HANCA DİL MOTORU v5.3 (ÜNLÜ ÇAKIŞMASI FİNAL ÇÖZÜM)
+# GÜVENLİK PROTOKOLÜ (LOGIN)
+# ==========================================
+def check_password():
+    """Giriş yapılmadan uygulamayı göstermez."""
+    if 'logged_in' not in st.session_state:
+        st.session_state['logged_in'] = False
+
+    if not st.session_state['logged_in']:
+        st.markdown("""
+        <style>
+            .stTextInput input {text-align: center; font-size: 20px;}
+        </style>
+        """, unsafe_allow_html=True)
+        
+        st.title("🔒 QHAN GROUP ACCESS")
+        st.caption("Identity Verification Required")
+        
+        password = st.text_input("ŞİFREYİ GİRİN:", type="password")
+        
+        if st.button("GİRİŞ YAP"):
+            # --- ŞİFRE BURADA BELİRLENİYOR ---
+            if password == "QHAN2026":  # <-- ŞİFREN BU
+                st.session_state['logged_in'] = True
+                st.success("Erişim İzni Verildi. Yükleniyor...")
+                time.sleep(1)
+                st.rerun()
+            else:
+                st.error("ERİŞİM REDDEDİLDİ!")
+        return False
+    return True
+
+# ==========================================
+# HANCA DİL MOTORU v5.3 (CORE)
 # ==========================================
 class HancaLanguageEngine:
     def __init__(self):
-        # --- SES AYARLARI ---
         self.vowels_thick = ['A', 'I', 'O', 'U', 'Å']
         self.vowels_thin  = ['E', 'İ', 'Ö', 'Ü', 'Ä']
         self.common_hard = ['K', 'P', 'T', 'S', 'Ş', 'F', 'H', 'Ç']
@@ -17,77 +49,50 @@ class HancaLanguageEngine:
         self.rare_soft = ['W', 'Ŋ', 'Γ', 'DZ', 'Ğ']
         self.all_vowels = self.vowels_thick + self.vowels_thin
 
-        # --- MASTER SÖZLÜK (HATALAR TEMİZLENDİ) ---
-        # Kural: Asla iki sesli yan yana gelmeyecek. (xuax -> xwax)
         self.master_dict = {
-            # BEN
             "ben": "vo", "beni": "voq", "bana": "voqa", "bende": "vota", 
             "benden": "votar", "benim": "vom", "bence": "votse",
-            # SEN
             "sen": "ze", "seni": "zeq", "sana": "zeqa", "sende": "zeta", 
             "senden": "zetar", "senin": "zen", "sence": "zetse",
-            # O
             "o": "xu", "onu": "xuq", "ona": "xuqa", "onda": "xuta", 
-            "ondan": "xutar", "onun": "xun", 
-            "onlar": "xwax", # DÜZELTİLDİ: xuax -> xwax (u-a çakışması bitti)
-            "onların": "xwaxon", # DÜZELTİLDİ: xuaxon -> xwaxon
-            # BİZ
+            "ondan": "xutar", "onun": "xun", "onlar": "xwax", "onların": "xwaxon",
             "biz": "vox", "bizi": "voxuq", "bize": "voxqa", "bizde": "voxta", "bizim": "voxom",
-            # SİZ
             "siz": "zex", "sizi": "zexuq", "size": "zexqa", "sizde": "zexta", "sizin": "zexen",
-            # İŞARET & SORU
             "bu": "vu", "bunu": "vuq", "buna": "vuqa",
             "şu": "zu", "şunu": "zuq", "şuna": "zuqa",
             "ne": "qo", "neyi": "qoq", "neye": "qoqa", "niye": "qoqa"
         }
 
-        # --- EK HARİTASI (UZUNLUK ÖNCELİKLİ) ---
         self.suffix_map = [
-            # 1. Çoğul Şahıs İyelikleri
             ({'larımız', 'leriniz'}, {'thick': 'axvox', 'thin': 'exvex'}), 
             ({'larınız', 'leriniz'}, {'thick': 'axzox', 'thin': 'exzex'}),
             ({'ları', 'leri'}, {'thick': 'xax', 'thin': 'xex'}), 
-
-            # 2. Tekil Şahıs İyelikleri
             ({'ımız', 'imiz', 'umuz', 'ümüz', 'mız', 'miz', 'muz', 'müz'}, {'thick': 'vox', 'thin': 'vex'}), 
             ({'ınız', 'iniz', 'unuz', 'ünüz', 'nız', 'niz', 'nuz', 'nüz'}, {'thick': 'zox', 'thin': 'zex'}), 
             ({'ım', 'im', 'um', 'üm', 'm'}, {'thick': 'om', 'thin': 'em'}),   
             ({'ın', 'in', 'un', 'ün', 'n'}, {'thick': 'on', 'thin': 'en'}),   
-            
-            # 3. İyelik (Onun)
             ({'sı', 'si', 'su', 'sü'}, {'thick': 'un', 'thin': 'ün'}),
             ({'ı', 'i', 'u', 'ü'}, {'thick': 'un', 'thin': 'ün'}), 
-
-            # 4. Standart Çoğul
             ({'lar', 'ler'}, {'thick': 'ax', 'thin': 'ex'}),
-
-            # 5. Hal Ekleri
             ({'dan', 'den', 'tan', 'ten'}, {'thick': 'tar', 'thin': 'ter'}), 
             ({'da', 'de', 'ta', 'te'}, {'thick': 'ta', 'thin': 'te'}),       
             ({'nın', 'nin', 'nun', 'nün'}, {'thick': 'yin', 'thin': 'yen'}), 
             ({'yı', 'yi', 'yu', 'yü'}, {'thick': 'uq', 'thin': 'üq'}),       
             ({'ya', 'ye', 'a', 'e'}, {'thick': 'qa', 'thin': 'qe'}),                     
             ({'ca', 'ce', 'ça', 'çe'}, {'thick': 'tse', 'thin': 'tsa'}),
-
-            # 6. Fiil Ekleri
             ({'ma', 'me'}, {'thick': 'nix', 'thin': 'nex'}),
             ({'yor'}, {'thick': 'zo', 'thin': 'ze'}),           
             ({'acak', 'ecek'}, {'thick': 'var', 'thin': 'ver'}), 
             ({'mış', 'miş', 'muş', 'müş'}, {'thick': 'riv', 'thin': 'rev'}), 
             ({'dı', 'di', 'du', 'dü', 'tı', 'ti', 'tu', 'tü'}, {'thick': 'da', 'thin': 'de'}), 
             ({'ar', 'er', 'ır', 'ir', 'ur', 'ür', 'r'}, {'thick': 'gen', 'thin': 'gan'}), 
-
             ({'malı', 'meli'}, {'thick': 'laz', 'thin': 'lez'}), 
             ({'sa', 'se'}, {'thick': 'so', 'thin': 'se'}),       
-
-            # 7. Yapım Ekleri
             ({'cı', 'ci', 'cu', 'cü', 'çı', 'çi'}, {'thick': 'or', 'thin': 'er'}), 
             ({'sız', 'siz', 'suz', 'süz'}, {'thick': 'non', 'thin': 'nen'}),       
             ({'lı', 'li', 'lu', 'lü'}, {'thick': 'lu', 'thin': 'lü'}),             
             ({'lık', 'lik', 'luk', 'lük'}, {'thick': 'sis', 'thin': 'sys'}),       
             ({'mak', 'mek'}, {'thick': 'mot', 'thin': 'met'}),                     
-
-            # 8. Diğerleri
             ({'dır', 'dir', 'dur', 'dür', 'tır', 'tir'}, {'thick': 'dur', 'thin': 'dür'}),
             ({'mı', 'mi', 'mu', 'mü'}, {'thick': 'ku', 'thin': 'kü'})
         ]
@@ -167,7 +172,6 @@ class HancaLanguageEngine:
 
             for tr_suffixes, hanca_suffixes in self.suffix_map:
                 sorted_suffixes = sorted(list(tr_suffixes), key=len, reverse=True)
-                
                 for suffix in sorted_suffixes:
                     if current_stem.endswith(suffix):
                         potential_stem = current_stem[:-len(suffix)]
@@ -181,7 +185,6 @@ class HancaLanguageEngine:
             if not match_found: break
 
         hanca_root = self.generate_root_word(current_stem)
-        
         last_vowel_is_thick = True
         for char in reversed(hanca_root):
             if char.upper() in self.vowels_thick:
@@ -194,28 +197,21 @@ class HancaLanguageEngine:
         final_word = hanca_root
         for suffix_options in detected_suffixes:
             chosen_suffix = suffix_options['thick'] if last_vowel_is_thick else suffix_options['thin']
-            
-            # --- KRİTİK DÜZELTME: ÜNLÜ YUTMA (VOWEL DROP) ---
-            # Kelime ünlüyle bitiyor VE Ek ünlüyle başlıyorsa -> Ekin ünlüsünü YUT.
             if self.is_vowel(final_word[-1].upper()) and self.is_vowel(chosen_suffix[0].upper()):
-                # final: Zora, suffix: ax -> Zorax (a düşer)
                 final_word += chosen_suffix[1:] 
             else:
                 final_word += chosen_suffix
-
         return final_word
 
     def translate_sentence(self, text, is_proper=False):
         if not text: return ""
         if is_proper:
             return " ".join([w.upper() if len(w)<2 else w[0].upper()+w[1:-1].lower()+w[-1].upper() for w in text.split()])
-        
         words = text.split()
         hanca_words = []
         for w in words:
             clean_w = ''.join(e for e in w if e.isalnum())
             punctuation = ''.join(e for e in w if not e.isalnum())
-            
             if clean_w:
                 translated = self.analyze_and_translate(clean_w)
                 hanca_words.append(translated + punctuation)
@@ -224,69 +220,65 @@ class HancaLanguageEngine:
         return " ".join(hanca_words)
 
 # ==========================================
-# ARAYÜZ
+# MAIN APP FLOW
 # ==========================================
-st.set_page_config(page_title="QHAN GENERATOR v5.3", page_icon="🛡️", layout="wide")
+st.set_page_config(page_title="QHAN MOBILE", page_icon="🛡️", layout="wide", initial_sidebar_state="collapsed")
 
-st.markdown("""
-<style>
-    .main {background-color: #0E1117;}
-    h1 {color: #00FF00 !important; font-family: 'Courier New', monospace;}
-    .stTextArea textarea {font-family: 'Courier New', monospace; font-size: 16px; color: #e6e6e6;}
-</style>
-""", unsafe_allow_html=True)
+# ÖNCE GÜVENLİK KONTROLÜ
+if check_password():
+    # GİRİŞ YAPILDIYSA ANA EKRAN GELİR
+    st.markdown("""
+    <style>
+        .main {background-color: #0E1117;}
+        h1 {color: #00FF00 !important; font-family: 'Courier New', monospace; font-size: 24px;}
+        .stTextArea textarea {font-family: 'Courier New', monospace; font-size: 16px; color: #e6e6e6;}
+        /* Mobilde butonları büyüt */
+        .stButton button {width: 100%; padding: 10px; font-weight: bold;}
+    </style>
+    """, unsafe_allow_html=True)
 
-st.title("🛡️ QHAN GROUP | Hanca Dil Motoru v5.3")
-st.markdown("**Sürüm Notları:** SIFIR ÇİFT ÜNLÜ | Onlar -> Xwax | Akıllı Ünlü Yutma (Zora + ax -> Zorax)")
-st.markdown("---")
+    st.title("🛡️ QHAN MOBILE v5.3")
+    st.markdown("---")
 
-engine = HancaLanguageEngine()
+    engine = HancaLanguageEngine()
+    
+    # Mobilde sekmeler yerine tek ekran daha iyidir ama alışkanlık bozulmasın
+    tab1, tab2 = st.tabs(["📝 MANUEL", "📂 DOSYA"])
 
-tab1, tab2 = st.tabs(["📝 Hızlı Çeviri (Manuel)", "📂 Toplu Çeviri (Excel/CSV)"])
-
-with tab1:
-    col1, col2 = st.columns(2)
-    with col1:
-        st.subheader("Girdi (Türkçe)")
-        text_input = st.text_area("Metin Girişi:", height=350, placeholder="Onlar\nOnların\nArabalar\nEvim")
+    with tab1:
+        st.subheader("Girdi")
+        text_input = st.text_area("Metin:", height=150, placeholder="Yaz...")
         
-        if st.button("Çeviriyi Başlat", type="primary"):
+        if st.button("ÇEVİR (RUN)", type="primary"):
             if text_input:
                 lines = text_input.strip().split('\n')
                 st.session_state['manual_results'] = [engine.translate_sentence(l.strip(), False) for l in lines if l.strip()]
 
-    with col2:
-        st.subheader("Çıktı (Hanca)")
+        st.subheader("Sonuç")
         if 'manual_results' in st.session_state:
             result_text = "\n".join(st.session_state['manual_results'])
-            st.text_area("Sonuçlar:", value=result_text, height=350)
+            st.text_area("Çıktı:", value=result_text, height=150)
 
-with tab2:
-    uploaded_file = st.file_uploader("Kelime Listesini Yükle", type=['xlsx', 'csv', 'txt'])
-    
-    if uploaded_file:
-        if st.button("DOSYAYI İŞLE VE ÇEVİR"):
-            with st.spinner('Çeviri yapılıyor...'):
-                try:
-                    if uploaded_file.name.endswith('.csv'):
-                        df = pd.read_csv(uploaded_file, header=None)
-                    elif uploaded_file.name.endswith('.xlsx'):
-                        df = pd.read_excel(uploaded_file, header=None)
-                    else:
-                        df = pd.read_csv(uploaded_file, header=None, delimiter="\n")
-                    
-                    words = df[0].astype(str).tolist()
-                    hanca_words = [engine.translate_sentence(w, False) for w in words]
-                    
-                    result_df = pd.DataFrame({'TURKCE': words, 'HANCA': hanca_words})
-                    
-                    st.success(f"✅ Tamamlandı. {len(words)} satır.")
-                    st.dataframe(result_df.head(10))
-                    
-                    buffer = io.BytesIO()
-                    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-                        result_df.to_excel(writer, index=False)
-                    
-                    st.download_button(label="📥 İNDİR", data=buffer, file_name="HANCA_V5_3.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-                except Exception as e:
-                    st.error(f"Hata: {e}")
+    with tab2:
+        uploaded_file = st.file_uploader("Dosya Yükle", type=['xlsx', 'csv', 'txt'])
+        if uploaded_file:
+            if st.button("İŞLE"):
+                with st.spinner('Çevriliyor...'):
+                    try:
+                        if uploaded_file.name.endswith('.csv'):
+                            df = pd.read_csv(uploaded_file, header=None)
+                        elif uploaded_file.name.endswith('.xlsx'):
+                            df = pd.read_excel(uploaded_file, header=None)
+                        else:
+                            df = pd.read_csv(uploaded_file, header=None, delimiter="\n")
+                        words = df[0].astype(str).tolist()
+                        hanca_words = [engine.translate_sentence(w, False) for w in words]
+                        result_df = pd.DataFrame({'TURKCE': words, 'HANCA': hanca_words})
+                        
+                        st.dataframe(result_df.head())
+                        buffer = io.BytesIO()
+                        with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                            result_df.to_excel(writer, index=False)
+                        st.download_button(label="İNDİR", data=buffer, file_name="HANCA_MOBILE.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                    except Exception as e:
+                        st.error(f"Hata: {e}")
